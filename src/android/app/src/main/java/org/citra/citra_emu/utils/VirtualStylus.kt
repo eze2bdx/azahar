@@ -12,12 +12,17 @@ import kotlin.math.hypot
  * Turns the right stick into a virtual finger on the 3DS bottom screen, so games that aim with the
  * stylus (e.g. Kid Icarus: Uprising) can be played with two sticks.
  *
- * AIR mode: the finger moves around the screen and stays inside it (reticle follows the stylus).
- * LAND mode: the finger drags continuously; when it nears an edge it is lifted (after holding
- * still, so the game doesn't read it as a flick) and put back in the center.
+ * The game reads stylus drags relatively, so the finger is dragged by the stick and, when it runs
+ * out of room at a screen edge, it is briefly lifted and put back down on the opposite side
+ * ("regrip") so the drag can keep going.
+ *
+ * AIR mode: the finger never lifts on its own, so the reticle stays where it was aimed.
+ * LAND mode: the finger lifts shortly after the stick is released, so the camera stops.
  */
 class VirtualStylus : Choreographer.FrameCallback {
     enum class Mode { AIR, LAND }
+
+    private enum class State { UP, DOWN, EDGE_HOLD, REGRIP_UP }
 
     var mode = Mode.AIR
         private set
@@ -27,9 +32,12 @@ class VirtualStylus : Choreographer.FrameCallback {
 
     private var x = 0.5f
     private var y = 0.5f
-    private var pressed = false
-    private var idleTime = 0f
-    private var holdFrames = 0
+    private var state = State.UP
+    private var timer = 0f
+
+    // Where to put the finger back down after a regrip
+    private var regripX = 0.5f
+    private var regripY = 0.5f
 
     private var lastFrameNanos = 0L
     private var running = false
@@ -41,15 +49,13 @@ class VirtualStylus : Choreographer.FrameCallback {
     }
 
     fun toggleMode(): Mode {
-        release()
+        lift()
         mode = if (mode == Mode.AIR) Mode.LAND else Mode.AIR
-        x = 0.5f
-        y = 0.5f
         return mode
     }
 
     fun stop() {
-        release()
+        lift()
         stickX = 0f
         stickY = 0f
         if (running) {
@@ -77,7 +83,7 @@ class VirtualStylus : Choreographer.FrameCallback {
             tick(dt)
         }
 
-        if (pressed || stickX != 0f || stickY != 0f) {
+        if (state != State.UP || stickX != 0f || stickY != 0f) {
             Choreographer.getInstance().postFrameCallback(this)
         } else {
             running = false
@@ -97,64 +103,107 @@ class VirtualStylus : Choreographer.FrameCallback {
             vy = stickY / mag * curve
         }
 
-        // Land mode: lifting the finger near an edge, holding still first to avoid a flick
-        if (holdFrames > 0) {
-            holdFrames--
-            send()
-            if (holdFrames == 0) {
-                release()
+        when (state) {
+            State.EDGE_HOLD -> {
+                // Stay still before lifting, so the game doesn't read it as a flick
+                timer -= dt
+                press()
+                if (timer <= 0f) {
+                    release()
+                    state = State.REGRIP_UP
+                    timer = REGRIP_UP_TIME
+                }
+                return
+            }
+
+            State.REGRIP_UP -> {
+                // Stay lifted long enough for the game to notice
+                timer -= dt
+                if (timer <= 0f) {
+                    x = regripX
+                    y = regripY
+                    if (active || mode == Mode.AIR) {
+                        state = State.DOWN
+                        timer = 0f
+                        press()
+                    } else {
+                        state = State.UP
+                    }
+                }
+                return
+            }
+
+            State.UP -> {
+                if (!active) return
                 x = 0.5f
                 y = 0.5f
+                state = State.DOWN
+                timer = 0f
             }
-            return
+
+            State.DOWN -> Unit
         }
 
+        // State.DOWN
         if (!active) {
-            idleTime += dt
-            if (pressed) {
-                send() // stay still before lifting
-                if (idleTime >= RELEASE_DELAY) {
-                    release()
-                    if (mode == Mode.LAND) {
-                        x = 0.5f
-                        y = 0.5f
-                    }
+            press() // keep the finger still
+            if (mode == Mode.LAND) {
+                timer += dt
+                if (timer >= LAND_RELEASE_DELAY) {
+                    lift()
                 }
             }
             return
         }
-
-        idleTime = 0f
-        pressed = true
+        timer = 0f
 
         val speed = if (mode == Mode.AIR) SPEED_AIR else SPEED_LAND
         x += vx * speed * dt
         y += vy * speed * dt * ASPECT
 
-        if (mode == Mode.AIR) {
-            x = x.coerceIn(AIR_MARGIN, 1f - AIR_MARGIN)
-            y = y.coerceIn(AIR_MARGIN, 1f - AIR_MARGIN)
-        } else if (x < LAND_EDGE || x > 1f - LAND_EDGE || y < LAND_EDGE || y > 1f - LAND_EDGE) {
-            x = x.coerceIn(0f, 1f)
-            y = y.coerceIn(0f, 1f)
-            holdFrames = REGRIP_HOLD_FRAMES
+        val hitLeft = x < EDGE
+        val hitRight = x > 1f - EDGE
+        val hitTop = y < EDGE
+        val hitBottom = y > 1f - EDGE
+        x = x.coerceIn(EDGE, 1f - EDGE)
+        y = y.coerceIn(EDGE, 1f - EDGE)
+        press()
+
+        if (hitLeft || hitRight || hitTop || hitBottom) {
+            // Out of room: come back down on the opposite side to keep the drag going
+            regripX = when {
+                hitRight -> REGRIP_ANCHOR
+                hitLeft -> 1f - REGRIP_ANCHOR
+                else -> x
+            }
+            regripY = when {
+                hitBottom -> REGRIP_ANCHOR
+                hitTop -> 1f - REGRIP_ANCHOR
+                else -> y
+            }
+            state = State.EDGE_HOLD
+            timer = EDGE_HOLD_TIME
         }
-        send()
     }
 
-    private fun send() {
+    private fun press() {
         NativeLibrary.setVirtualStylus(x, y, true)
     }
 
     private fun release() {
-        holdFrames = 0
-        idleTime = 0f
-        if (pressed) {
-            pressed = false
-            if (NativeLibrary.isRunning()) {
-                NativeLibrary.setVirtualStylus(0f, 0f, false)
-            }
+        if (NativeLibrary.isRunning()) {
+            NativeLibrary.setVirtualStylus(0f, 0f, false)
         }
+    }
+
+    private fun lift() {
+        if (state != State.UP) {
+            release()
+        }
+        state = State.UP
+        timer = 0f
+        x = 0.5f
+        y = 0.5f
     }
 
     companion object {
@@ -162,14 +211,17 @@ class VirtualStylus : Choreographer.FrameCallback {
 
         // Screen widths per second at full tilt
         private const val SPEED_AIR = 1.6f
-        private const val SPEED_LAND = 1.5f
+        private const val SPEED_LAND = 1.9f
 
         // The 3DS bottom screen is 320x240, keep vertical speed equal in pixels
         private const val ASPECT = 320f / 240f
 
-        private const val AIR_MARGIN = 0.02f
-        private const val LAND_EDGE = 0.1f
-        private const val REGRIP_HOLD_FRAMES = 3
-        private const val RELEASE_DELAY = 0.12f
+        private const val EDGE = 0.04f
+        private const val REGRIP_ANCHOR = 0.08f
+
+        // Timings in seconds, long enough to span a couple of game frames at 30fps
+        private const val EDGE_HOLD_TIME = 0.04f
+        private const val REGRIP_UP_TIME = 0.07f
+        private const val LAND_RELEASE_DELAY = 0.12f
     }
 }
