@@ -93,6 +93,16 @@ android {
         buildConfigField("String", "BRANCH", "\"${getBranch()}\"")
     }
 
+    // Fixed debug key so every build of this fork has the same signature and updates in place
+    signingConfigs {
+        getByName("debug") {
+            storeFile = file("kiu-debug.keystore")
+            storePassword = "android"
+            keyAlias = "androiddebugkey"
+            keyPassword = "android"
+        }
+    }
+
     val keystoreFile = System.getenv("ANDROID_KEYSTORE_FILE")
     if (keystoreFile != null) {
         signingConfigs {
