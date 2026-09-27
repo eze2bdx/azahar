@@ -939,6 +939,15 @@ void Java_org_citra_citra_1emu_NativeLibrary_onTouchMoved([[maybe_unused]] JNIEn
     window->OnTouchMoved((int)x, (int)y);
 }
 
+void Java_org_citra_citra_1emu_NativeLibrary_setVirtualStylus([[maybe_unused]] JNIEnv* env,
+                                                              [[maybe_unused]] jobject obj,
+                                                              jfloat x, jfloat y,
+                                                              jboolean pressed) {
+    if (window) {
+        window->SetTouchNormalized(x, y, pressed);
+    }
+}
+
 jboolean Java_org_citra_citra_1emu_NativeLibrary_onSecondaryTouchEvent([[maybe_unused]] JNIEnv* env,
                                                                        [[maybe_unused]] jobject obj,
                                                                        jfloat x, jfloat y,

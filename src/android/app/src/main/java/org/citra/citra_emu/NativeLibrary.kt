@@ -126,6 +126,15 @@ object NativeLibrary {
      */
     external fun onSecondaryTouchMoved(xAxis: Float, yAxis: Float)
 
+    /**
+     * Directly sets the emulated touchscreen state (used by the right-stick virtual stylus).
+     *
+     * @param x Normalized x-position on the 3DS bottom screen (0 = left, 1 = right).
+     * @param y Normalized y-position on the 3DS bottom screen (0 = top, 1 = bottom).
+     * @param pressed Whether the touchscreen is pressed.
+     */
+    external fun setVirtualStylus(x: Float, y: Float, pressed: Boolean)
+
     external fun reloadSettings()
 
     external fun getTitleId(filename: String): Long

@@ -2,6 +2,7 @@
 // Licensed under GPLv2 or any later version
 // Refer to the license.txt file included.
 
+#include <algorithm>
 #include <cmath>
 #include <mutex>
 #include "common/settings.h"
@@ -157,6 +158,13 @@ void EmuWindow::TouchReleased() {
     touch_state->touch_pressed = false;
     touch_state->touch_x = 0;
     touch_state->touch_y = 0;
+}
+
+void EmuWindow::SetTouchNormalized(float x, float y, bool pressed) {
+    std::scoped_lock guard{touch_state->mutex};
+    touch_state->touch_pressed = pressed;
+    touch_state->touch_x = pressed ? std::clamp(x, 0.0f, 1.0f) : 0.0f;
+    touch_state->touch_y = pressed ? std::clamp(y, 0.0f, 1.0f) : 0.0f;
 }
 
 void EmuWindow::TouchMoved(unsigned framebuffer_x, unsigned framebuffer_y) {

@@ -176,6 +176,8 @@ android {
             isDefault = true
             dimension = "version"
             versionNameSuffix = "-vanilla"
+            // Separate package so it installs next to the official Azahar
+            applicationIdSuffix = ".kiu"
         }
         register("googlePlay") {
             dimension = "version"

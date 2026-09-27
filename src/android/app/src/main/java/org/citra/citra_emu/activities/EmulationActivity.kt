@@ -58,6 +58,7 @@ import org.citra.citra_emu.utils.NetPlayManager
 import org.citra.citra_emu.utils.PermissionsHandler
 import org.citra.citra_emu.utils.RefreshRateUtil
 import org.citra.citra_emu.utils.ThemeUtil
+import org.citra.citra_emu.utils.VirtualStylus
 import org.citra.citra_emu.viewmodel.EmulationViewModel
 
 class EmulationActivity : AppCompatActivity() {
@@ -68,6 +69,7 @@ class EmulationActivity : AppCompatActivity() {
     val settingsViewModel: SettingsViewModel by viewModels()
 
     private lateinit var binding: ActivityEmulationBinding
+    private val virtualStylus = VirtualStylus()
     private lateinit var screenAdjustmentUtil: ScreenAdjustmentUtil
     private lateinit var hotkeyUtility: HotkeyUtility
     lateinit var secondaryDisplayManager: SecondaryDisplay
@@ -218,6 +220,7 @@ class EmulationActivity : AppCompatActivity() {
     }
 
     override fun onStop() {
+        virtualStylus.stop()
         secondaryDisplayManager.releasePresentation()
         super.onStop()
     }
@@ -358,6 +361,19 @@ class EmulationActivity : AppCompatActivity() {
             return super.dispatchKeyEvent(event)
         }
 
+        // Right stick click switches the virtual stylus between air and land aiming
+        if (event.keyCode == KeyEvent.KEYCODE_BUTTON_THUMBR) {
+            if (event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0) {
+                val mode = virtualStylus.toggleMode()
+                Toast.makeText(
+                    this,
+                    if (mode == VirtualStylus.Mode.AIR) "Visée : VOL" else "Visée : SOL",
+                    Toast.LENGTH_SHORT
+                ).show()
+            }
+            return true
+        }
+
         when (event.action) {
             KeyEvent.ACTION_DOWN -> {
                 // On some devices, the back gesture / button press is not intercepted by androidx
@@ -421,6 +437,7 @@ class EmulationActivity : AppCompatActivity() {
         var isTriggerPressedR = false
         var isTriggerPressedZL = false
         var isTriggerPressedZR = false
+        var isCStickMapped = false
         for (range in motions) {
             val axis = range.axis
             val origValue = event.getAxisValue(axis)
@@ -449,6 +466,7 @@ class EmulationActivity : AppCompatActivity() {
                 }
 
                 NativeLibrary.ButtonType.STICK_C -> {
+                    isCStickMapped = true
                     axisValuesCStick[guestOrientation] = value
                 }
 
@@ -477,6 +495,18 @@ class EmulationActivity : AppCompatActivity() {
                 }
             }
         }
+
+        // The right stick drives the virtual stylus instead of the C-Stick
+        if (isCStickMapped) {
+            virtualStylus.onStick(axisValuesCStick[0], axisValuesCStick[1])
+        } else {
+            virtualStylus.onStick(
+                event.getAxisValue(MotionEvent.AXIS_Z),
+                event.getAxisValue(MotionEvent.AXIS_RZ)
+            )
+        }
+        axisValuesCStick[0] = 0f
+        axisValuesCStick[1] = 0f
 
         // Circle-Pad and C-Stick status
         NativeLibrary.onGamePadMoveEvent(

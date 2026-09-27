@@ -210,6 +210,14 @@ public:
     void TouchMoved(unsigned framebuffer_x, unsigned framebuffer_y);
 
     /**
+     * Directly set the emulated touchscreen state, bypassing the framebuffer layout.
+     * @param x Normalized x-position on the 3DS bottom screen (0 = left, 1 = right)
+     * @param y Normalized y-position on the 3DS bottom screen (0 = top, 1 = bottom)
+     * @param pressed Whether the touchscreen is pressed
+     */
+    void SetTouchNormalized(float x, float y, bool pressed);
+
+    /**
      * Returns currently active configuration.
      * @note Accesses to the returned object need not be consistent because it may be modified in
      * another thread
